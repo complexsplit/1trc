@@ -3,6 +3,7 @@ import os
 from lxml import etree
 
 config_dir = "./tmp"
+os.makedirs(config_dir, exist_ok=True)
 
 
 class ConfigGenerator:
@@ -23,6 +24,10 @@ class ConfigGenerator:
         with open(hosts_filename, "w") as hosts_file:
             hosts_file.write(f"127.0.0.1 1trc-node-{node_num}.localdomain 1trc-node-{node_num}\n")
             for i, ip in enumerate(private_ips):
+                if not isinstance(ip, str):
+                    raise TypeError(
+                        f"private_ips[{i}] must be a resolved string, got "
+                        f"{type(ip).__name__}: {ip!r}")
                 hosts_file.write(
                     f"{ip} 1trc-node-{i}.localdomain 1trc-node-{i}\n")
         return hosts_filename
@@ -54,7 +59,7 @@ class ConfigGenerator:
         os.makedirs(node_dir, exist_ok=True)
         node_filename = os.path.join(node_dir, f"1trc_node_{node_num}.xml")
         replicas = "\n".join(
-            f"<replica><port>9000</port><host>1trc-node-{i}</host><password>{password}</password></replica>" for i in
+            f"<replica><host>1trc-node-{i}</host><port>9000</port><user>default</user><password>{password}</password></replica>" for i in
             range(self._num_nodes))
         # config keeper for only the 1st 3 nodes
         raft_config = ""
@@ -73,16 +78,17 @@ class ConfigGenerator:
                         </raft_configuration>
                     </keeper_server>"""
 
-        # every node needs ref to keeper
-        node_id = 1 if node_num > 3 else 2
-        keepers = "\n".join(f"<node><index>1</index><host>1trc-node-{i}</host></node>" if node_num == i
-                            else f"<node><index>1</index><host>1trc-node-{node_id}</host></node>" for i in
-                            range(min(self._num_nodes, 3)))
+        # every node needs ref to all keepers (first 3 nodes run keeper)
+        num_keepers = min(self._num_nodes, 3)
+        keepers = "\n".join(f"<node><index>{i}</index><host>1trc-node-{i}</host><port>2181</port></node>"
+                            for i in range(num_keepers))
         with open(node_filename, "w") as node_file:
             config = f"""<clickhouse>
                     <listen_host>::</listen_host>
                     <listen_host>0.0.0.0</listen_host>
                     <listen_try>1</listen_try>
+                    <interserver_http_port>9009</interserver_http_port>
+                    <interserver_http_host>1trc-node-{node_num}</interserver_http_host>
                     <logger>
                         <level>debug</level>
                     </logger>

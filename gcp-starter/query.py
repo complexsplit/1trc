@@ -7,12 +7,18 @@ import time
 class ClickHouseQueryProvider(ResourceProvider):
 
     def _number_instances_ready(self, ip_address, password):
-        client = clickhouse_connect.get_client(host=ip_address, username='default', password=password)
-        response = client.query(
-            "SELECT * FROM clusterAllReplicas('default', "
-            "view(SELECT hostname() AS server, uptime() AS uptime FROM system.one)) ORDER BY server ASC",
-            settings={"skip_unavailable_shards": "1"})
-        return len(list(filter(lambda ready: ready, [row[1] for row in response.result_rows])))
+        # the cluster takes a moment to form, so a failed connection just means
+        # "not ready yet" rather than an error
+        try:
+            client = clickhouse_connect.get_client(host=ip_address, username='default', password=password)
+            response = client.query(
+                "SELECT hostname(), uptime() FROM clusterAllReplicas('default', system.one) "
+                "ORDER BY hostname() ASC",
+                settings={"skip_unavailable_shards": "1"})
+            return len(response.result_rows)
+        except Exception as e:
+            pulumi.log.debug(f"cluster is not ready: {e}")
+            return 0
 
     def _is_cluster_ready(self, props):
         pulumi.log.info(f"checking cluster is ready...")

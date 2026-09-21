@@ -22,6 +22,10 @@ number_instances = Config("1trc").get_int("number_instances")
 password = Config("1trc").get("cluster_password")
 image = Config("1trc").get("image")
 query = Config("1trc").get("query")
+project = Config("gcp").get("project")
+# attach the project's default compute service account so ClickHouse can
+# authenticate to GCS via the GCE metadata server (GCP OAuth)
+default_service_account = gcp.compute.get_default_service_account(project=project)
 # as seen by public service, needed for firewall rules
 public_ip = get('https://api.ipify.org').text
 
@@ -113,6 +117,10 @@ for index in range(number_instances):
             preemptible=True,  # Spot instance
             automatic_restart=False,
             on_host_maintenance="TERMINATE"
+        ),
+        service_account=gcp.compute.InstanceServiceAccountArgs(
+            email=default_service_account.email,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
         ),
         metadata={
             "ssh-keys": f"ubuntu:{public_key}"

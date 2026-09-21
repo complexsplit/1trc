@@ -1,12 +1,12 @@
 # GCP provider
 
-This contains the Pulumi code for provisioning GCP preemptible instances, configuring a ClickHouse cluster, running a configured query against S3, and immediately shutting them down.
+This contains the Pulumi code for provisioning GCP preemptible instances, configuring a ClickHouse cluster, running a configured query against Google Cloud Storage, and immediately shutting them down.
 
 The code aims to provision and destroy resources as quickly as possible (with the aim of minimizing costs) - improvements here are welcome.
 
 Users may wish to experiment with different datasets and instance types to minimize query runtime AND/OR cost. We recommend consulting [Google Cloud Spot VM Pricing](https://cloud.google.com/spot-vms/pricing) for exploring instance costs.
 
-See [ClickHouse and The One Trillion Row Challenge](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) for an original blog with further details. Note: the blog post uses the AWS equivalent code found elsewhere in this repository.
+See [ClickHouse and The One Trillion Row Challenge](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) for background on the dataset.
 
 ## Dependencies
 
@@ -29,26 +29,24 @@ config:
   1trc:cluster_password: "clickhouse_admin"
   # Ubuntu Minimal 24.04 LTS ARM64 image
   1trc:image: "ubuntu-minimal-2404-lts-arm64"
-  # modify for your query
-  1trc:query: "SELECT station, min(measure), max(measure), round(avg(measure), 2) FROM s3Cluster('default','https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-*.parquet', '<AWS_ACCESS_KEY_ID>', '<AWS_SECRET_ACCESS_KEY>', headers('x-amz-request-payer' = 'requester')) GROUP BY station ORDER BY station ASC SETTINGS max_download_buffer_size = 52428800, max_threads=128"
+  # modify for your query - GCS is read with the instance service account via GCP OAuth
+  1trc:query: "SELECT station, min(measure), max(measure), round(avg(measure), 2) FROM s3Cluster('default','https://storage.googleapis.com/<your-bucket>/1trc/measurements-*.parquet') GROUP BY station ORDER BY station ASC SETTINGS max_download_buffer_size = 52428800, max_threads=128, s3_allow_server_credentials_in_user_queries=1"
 ```
 
-By default, this queries a trillion row dataset `https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-*.parquet` of weather measurements, computing a min, max and avg per station. This data is located in `us-east-1` and requires the requester pay.
+By default, this queries a trillion row dataset of weather measurements stored in GCS, computing a min, max and avg per station. The parquet files should be available at `gs://<your-bucket>/1trc/measurements-*.parquet`.
 
 To achieve this, it:
 
-- Deploys infrastructure to `us-east4` (Northern Virginia) in Google Cloud to minimize latency to AWS `us-east-1`.
+- Deploys infrastructure to `us-east4` (Northern Virginia).
 - Uses 5 * `c4a-highcpu-72` (ARM) preemptible instances in `us-east4-a` as these were the fastest per vCPU during initial testing.
-- Requires AWS credentials to be configured in the query for S3 access. This will be used to pay, as the requestor, for the data transfer out of S3.
+- Reads GCS with the instances' service account, via GCP OAuth - no credentials need to be placed in the query.
 - Uses the Ubuntu Minimal 24.04 LTS ARM64 image.
 
 Users can either add stacks or change the above configuration.
 
-**Important: Ensure you replace `<your-gcp-project-id>` with your actual GCP project ID in `Pulumi.dev.yaml`**
+**Important: Ensure you replace `<your-gcp-project-id>` and `<your-bucket>` with your own values in `Pulumi.dev.yaml`**
 
-**Important: Ensure you modify the `1trc:query` to include the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` with which you want to query**
-
-The default configuration requires a `C4A` quota of at least 360 vCPUs in the region. Compute is short-lived and inexpensive; the main cost is the requester-pays S3 data transfer, which is billed to the AWS account whose credentials you supply.
+The default configuration requires a `C4A` quota of at least 360 vCPUs in the region. Compute is short-lived and inexpensive; the main cost is GCS data transfer. Reading a multi-region bucket from a region is billed as inter-region transfer, so for repeated queries consider copying the dataset into a regional bucket in the same region as the cluster.
 
 ## Deploying
 

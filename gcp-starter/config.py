@@ -87,6 +87,9 @@ class ConfigGenerator:
                     <listen_host>::</listen_host>
                     <listen_host>0.0.0.0</listen_host>
                     <listen_try>1</listen_try>
+                    <s3>
+                        <http_client>gcp_oauth</http_client>
+                    </s3>
                     <interserver_http_port>9009</interserver_http_port>
                     <interserver_http_host>1trc-node-{node_num}</interserver_http_host>
                     <logger>
